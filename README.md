@@ -14,8 +14,9 @@ To use it either
    (as root), or
 2. change into the directory where you downloaded the executable to.
 
-Then you prepend the command you use to run `rnode` with `rnode` or `./rnode`
-depending on where you put the executable.
+Then you prepend the command you use to run `rnode` with `rdoctor` or
+`./rdoctor` depending on where you put the executable. On first run, you'll be
+interactively asked for details to register with backend.
 
 #### Example (MacOS)
 
