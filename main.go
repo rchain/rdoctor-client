@@ -15,7 +15,9 @@ func main() {
 	}
 	config := LoadConfig()
 	CheckForUpdate(config)
-	RunSetup(config)
+	if !config.HasApiKey() {
+		RunSetup(config)
+	}
 	forwarder := ConnectForwarder(config)
 	lines := make(chan CapturedLine)
 	StartMainProgram(os.Args[1:], lines)

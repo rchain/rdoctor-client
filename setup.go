@@ -49,9 +49,6 @@ func requestNewApiKey(config *Config, identity string) string {
 }
 
 func ping(config *Config) bool {
-	if !config.HasApiKey() {
-		return false
-	}
 	response, err := http.PostForm(config.GetPingUrl(), nil)
 	if err != nil {
 		Die(err.Error())
@@ -68,10 +65,6 @@ func ping(config *Config) bool {
 }
 
 func RunSetup(config *Config) {
-	if ping(config) {
-		return
-	}
-
 	identity := promptForIdentity()
 	apiKey := requestNewApiKey(config, identity)
 
