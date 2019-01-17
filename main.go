@@ -18,8 +18,12 @@ func main() {
 	if !config.HasApiKey() {
 		RunSetup(config)
 	}
-	forwarder := ConnectForwarder(config)
+	exitChan := make(chan int)
+	doneChan := make(chan bool)
 	lines := make(chan CapturedLine)
-	StartMainProgram(os.Args[1:], lines)
-	forwarder.ForwardLines(lines)
+	go RunForwarder(config, lines, doneChan)
+	StartMainProgram(os.Args[1:], lines, exitChan)
+	exitCode := <-exitChan
+	<-doneChan
+	os.Exit(exitCode)
 }

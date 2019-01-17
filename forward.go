@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"strconv"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -11,27 +12,85 @@ type Forwarder struct {
 	conn *websocket.Conn
 }
 
-func ConnectForwarder(config *Config) Forwarder {
+func RunForwarder(config *Config, lines chan CapturedLine, doneChan chan bool) {
+	bufferedLines := make(chan CapturedLine, 100)
+	sendDone := make(chan bool)
+	go connectAndSendLoop(config, bufferedLines, sendDone)
+	for {
+		line, ok := <-lines
+		if !ok { // program exit
+			close(bufferedLines)
+			select { // give sender some time to quit but don't wait forever
+			case <-sendDone:
+			case <-time.After(10 * time.Second):
+			}
+			break
+		}
+		select {
+		case bufferedLines <- line:
+		default:
+		}
+	}
+	doneChan <- true
+	close(doneChan)
+}
+
+func connectWebsocket(config *Config, lines chan CapturedLine) *websocket.Conn {
 	url := config.GetSubmitLogUrl()
-	for i := 0; i < 10; i++ {
+	for {
 		conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 		if err != nil {
 			if err == websocket.ErrBadHandshake && resp != nil && resp.StatusCode/100 == 3 {
 				location, err := resp.Location()
-				if err == nil {
+				if err != nil {
+					Warn("Could not read Location header: %s", err)
+				} else {
 					url = location.String()
-					continue
+				}
+			} else {
+				Warn("Could not connect to remote websocket: %s", err)
+				if resp != nil {
+					Warn("  HTTP response status: %s", resp.Status)
 				}
 			}
-			SayErr("Could not connect to remote websocket: %s", err)
-			if resp != nil {
-				SayErr("  HTTP response status: %s", resp.Status)
-			}
-			Die("Cannot continue")
+		} else {
+			return conn
 		}
-		return Forwarder{conn}
+		for {
+			select {
+			case _, ok := <-lines: // drop lines
+				if !ok { // program exit, don't reconnect
+					return nil
+				}
+			case <-time.After(5 * time.Second): // reconnect delay
+				break
+			}
+		}
 	}
-	panic("")
+}
+
+func connectAndSendLoop(config *Config, lines chan CapturedLine, sendDone chan bool) {
+	for {
+		conn := connectWebsocket(config, lines)
+		if conn == nil { // program exit
+			break
+		}
+		SayOut("Connected")
+		var err error
+		for line := range lines {
+			err = conn.WriteMessage(websocket.TextMessage, encodeLine(&line))
+			if err != nil {
+				Warn("Could not write to websocket: %s", err)
+				conn.Close()
+				break
+			}
+		}
+		if err == nil { // program exit
+			break
+		}
+	}
+	sendDone <- true
+	close(sendDone)
 }
 
 func encodeLine(capturedLine *CapturedLine) []byte {

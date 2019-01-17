@@ -33,7 +33,6 @@ func (c CapturedLine) String() string {
 }
 
 func readLines(pipe io.ReadCloser, lines chan CapturedLine, stderr bool) {
-	defer pipe.Close()
 	defer close(lines)
 	copyOut := os.Stdout
 	if stderr {
@@ -50,7 +49,10 @@ func readLines(pipe io.ReadCloser, lines chan CapturedLine, stderr bool) {
 			Stderr:     stderr,
 			Eof:        eof,
 		}
-		lines <- capturedLine
+		select {
+		case lines <- capturedLine:
+		default:
+		}
 		if eof {
 			break
 		}
@@ -60,10 +62,10 @@ func readLines(pipe io.ReadCloser, lines chan CapturedLine, stderr bool) {
 	if err := scanner.Err(); err != nil {
 		SayErr("Could not read from pipe: %s", err)
 	}
+	// let cmd.Wait() close pipe
 }
 
-func combineOutputs(stdout, stderr io.ReadCloser, lines chan CapturedLine) {
-	defer close(lines)
+func combineOutputs(stdout, stderr io.ReadCloser, lines chan CapturedLine, eofChan chan bool) {
 	stdoutLines := make(chan CapturedLine)
 	stderrLines := make(chan CapturedLine)
 	go readLines(stdout, stdoutLines, false)
@@ -87,9 +89,12 @@ func combineOutputs(stdout, stderr io.ReadCloser, lines chan CapturedLine) {
 			break
 		}
 	}
+	close(lines)
+	eofChan <- true
+	close(eofChan)
 }
 
-func StartMainProgram(cmdLine []string, lines chan CapturedLine) {
+func StartMainProgram(cmdLine []string, lines chan CapturedLine, exitChan chan int) {
 	var err error
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, cmdLine[0], cmdLine[1:]...)
@@ -102,7 +107,13 @@ func StartMainProgram(cmdLine []string, lines chan CapturedLine) {
 	if err != nil {
 		Die("Could not create pipe: %s", err)
 	}
-	go combineOutputs(stdout, stderr, lines)
+	/*
+	 * cmd.Wait() closes output pipes on process exit which makes
+	 * bufio.Scanner's read() fail. Wait for EOF (from both stdout and stdin)
+	 * before calling cmd.Wait()
+	 */
+	eofChan := make(chan bool)
+	go combineOutputs(stdout, stderr, lines, eofChan)
 	interrupts := make(chan os.Signal)
 	signal.Notify(interrupts, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	go func() {
@@ -115,4 +126,23 @@ func StartMainProgram(cmdLine []string, lines chan CapturedLine) {
 	if err != nil {
 		Die("Could not create process: %s", err)
 	}
+	go func() {
+		exitCode := 0
+		<-eofChan
+		err := cmd.Wait()
+		if err != nil {
+			// https://stackoverflow.com/a/10385867/214720
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
+					exitCode = status.ExitStatus()
+					err = nil
+				}
+			}
+		}
+		if err != nil {
+			Warn("Waiting for command was not successful: %s", err)
+		}
+		exitChan <- exitCode
+		close(exitChan)
+	}()
 }
