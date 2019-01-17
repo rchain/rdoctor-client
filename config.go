@@ -38,14 +38,14 @@ func (conf *Config) Has(key string) bool {
 }
 
 func (conf *Config) Get(key string) string {
+	val, present := getFromEnv(key)
+	if present {
+		return val
+	}
 	if conf.mainSection.HasKey(key) {
 		return conf.mainSection.Key(key).String()
 	}
-	val, present := getFromEnv(key)
-	if !present {
-		panic("Configuration key '" + key + "' not set!")
-	}
-	return val
+	panic("Configuration key '" + key + "' not set!")
 }
 
 func (conf *Config) GetOrElse(key string, def string) string {
