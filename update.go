@@ -5,21 +5,14 @@ import (
 	"net/http"
 	"strings"
 
-	version "github.com/hashicorp/go-version"
+	"github.com/mcuadros/go-version"
 )
 
 func needUpdate(latestVer string) bool {
-	v1, err := version.NewVersion(Version)
-	if err != nil {
-		Warn("Could not parse current version: %s", err)
-		return false
+	if version.CompareSimple(Version, latestVer) < 0 {
+		return true
 	}
-	v2, err := version.NewVersion(latestVer)
-	if err != nil {
-		Warn("Could not parse latest version: %s", err)
-		return false
-	}
-	return v1.LessThan(v2)
+	return false
 }
 
 func CheckForUpdate(config *Config) {
