@@ -1,0 +1,15 @@
+#!/bin/bash -e
+
+do_stop()
+{
+	echo "Got signal"
+	sleep 1
+	exit 0
+}
+
+trap do_stop INT TERM
+
+while :; do
+	fortune
+	sleep 1
+done

@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -96,8 +95,7 @@ func combineOutputs(stdout, stderr io.ReadCloser, lines chan CapturedLine, eofCh
 
 func StartMainProgram(cmdLine []string, lines chan CapturedLine, exitChan chan int) {
 	var err error
-	ctx, cancel := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(ctx, cmdLine[0], cmdLine[1:]...)
+	cmd := exec.Command(cmdLine[0], cmdLine[1:]...)
 	var stdout, stderr io.ReadCloser
 	stdout, err = cmd.StdoutPipe()
 	if err != nil {
@@ -118,8 +116,11 @@ func StartMainProgram(cmdLine []string, lines chan CapturedLine, exitChan chan i
 	signal.Notify(interrupts, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	go func() {
 		for {
-			<-interrupts
-			cancel()
+			sig := <-interrupts
+			// cmd.Process is nil before cmd.Start() succeeds
+			if cmd.Process != nil {
+				cmd.Process.Signal(sig)
+			}
 		}
 	}()
 	err = cmd.Start()
