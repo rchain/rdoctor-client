@@ -21,6 +21,7 @@ interactively asked for details to register with backend.
 #### Example (MacOS)
 
     curl -O https://build.rchain-dev.tk/misc/rdoctor/latest/darwin.amd64/rdoctor
+    chmod +x rdoctor
     sudo cp rdoctor /usr/local/bin
     cd /path/to/rnode
     rdoctor ./bin/rnode ... # rest of the arguments for rnode
